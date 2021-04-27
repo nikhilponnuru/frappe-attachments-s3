@@ -107,10 +107,10 @@ class S3Operations(object):
         Uploads a new file to S3.
         Strips the file extension to set the content_type in metadata.
         """
-        mime_type = magic.from_file(file_path, mime=True)
-        key = self.key_generator(file_name, parent_doctype, parent_name)
-        content_type = mime_type
         try:
+            mime_type = magic.from_file(file_path, mime=True)
+            key = self.key_generator(file_name, parent_doctype, parent_name)
+            content_type = mime_type
             if is_private:
                 self.S3_CLIENT.upload_file(
                     file_path, self.BUCKET, key,
@@ -123,8 +123,9 @@ class S3Operations(object):
                     }
                 )
             else:
+                key= os.getenv("PREPEND_KEY") + key
                 self.S3_CLIENT.upload_file(
-                    file_path, self.BUCKET, key,
+                    file_path, os.getenv("PUBLIC_BUCKET_NAME"), key,
                     ExtraArgs={
                         "ContentType": content_type,
                         "ACL": 'public-read',
@@ -207,6 +208,14 @@ def file_upload_to_s3(doc, method):
     parent_doctype = doc.attached_to_doctype
     parent_name = doc.attached_to_name
     ignore_s3_upload_for_doctype = frappe.local.conf.get('ignore_s3_upload_for_doctype') or ['Data Import']
+    if parent_doctype != os.getenv("DOCTYPE_ALLOWED") and not doc.is_private:
+        file_path = site_path + path
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        frappe.throw("Not allowed to upload public file. Make file as private and retry.")
+
     if parent_doctype not in ignore_s3_upload_for_doctype:
         if not doc.is_private:
             file_path = site_path + '/public' + path
@@ -224,7 +233,7 @@ def file_upload_to_s3(doc, method):
         else:
             file_url = '{}/{}/{}'.format(
                 s3_upload.S3_CLIENT.meta.endpoint_url,
-                s3_upload.BUCKET,
+                os.getenv("PUBLIC_BUCKET_NAME"),
                 key
             )
         os.remove(file_path)
